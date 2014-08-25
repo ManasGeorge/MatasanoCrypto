@@ -13,9 +13,9 @@ def main():
 		for i in range(1,256):
 			k = "{0:02x}".format(i) * n
 			m = binascii.unhexlify(xors(s,k))
-			fm = "".join(c for c in m if c in string.printable)
-			if len(fm) == n and fm.count(' ') > 3:
-				print fm
+			fm = "".join(c for c in m if c in string.printable).rstrip()
+			# if len(fm) == n and fm.count(' ') > 3:
+			print fm	
 
 
 if __name__ == "__main__":
