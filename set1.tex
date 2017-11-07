@@ -1,0 +1,301 @@
+% Created 2017-11-01 Wed 21:44
+% Intended LaTeX compiler: pdflatex
+\documentclass[11pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{graphicx}
+\usepackage{grffile}
+\usepackage{longtable}
+\usepackage{wrapfig}
+\usepackage{rotating}
+\usepackage[normalem]{ulem}
+\usepackage{amsmath}
+\usepackage{textcomp}
+\usepackage{amssymb}
+\usepackage{capt-of}
+\usepackage{hyperref}
+\date{\today}
+\title{}
+\hypersetup{
+ pdfauthor={},
+ pdftitle={},
+ pdfkeywords={},
+ pdfsubject={},
+ pdfcreator={Emacs 25.3.1 (Org mode 9.1)}, 
+ pdflang={English}}
+\begin{document}
+
+\tableofcontents
+
+\section{Set 1}
+\label{sec:org4c8d814}
+\subsection{Challenge 1 (Convert hex to base64)}
+\label{sec:orgd384c27}
+\begin{itemize}
+\item Converting hex to base64
+\end{itemize}
+\begin{verbatim}
+from base64 import b64decode, b64encode
+import codecs
+
+
+def hex2b64(s):
+    s = codecs.decode(s, "hex")
+    return codecs.decode((b64encode(s)), "ascii")
+
+
+def test_hex2b64():
+    s = "49276d206b696c6c696e6720796f757220627261696e206c696b65206120706f69736f6e6f7573206d757368726f6f6d"
+    t = "SSdtIGtpbGxpbmcgeW91ciBicmFpbiBsaWtlIGEgcG9pc29ub3VzIG11c2hyb29t"
+    return t == hex2b64(s)
+
+
+test_hex2b64()
+\end{verbatim}
+
+\subsection{Challenge 2 (XOR two strings together)}
+\label{sec:orgd8ae2eb}
+\begin{itemize}
+\item Producing the XOR of two fixed-length strings
+\item Always operating with bytes, using hex strings only for presentation
+\end{itemize}
+\begin{verbatim}
+import codecs
+
+
+def xor_strings(xs, ys):
+    return bytes([x ^ y for x, y in zip(xs, ys)])
+
+
+def test_xor_strings():
+    xs = codecs.decode("1c0111001f010100061a024b53535009181c", "hex")
+    ys = codecs.decode("686974207468652062756c6c277320657965", "hex")
+    zs = codecs.decode("746865206b696420646f6e277420706c6179", "hex")
+    return zs == xor_strings(xs, ys)
+
+test_xor_strings()
+\end{verbatim}
+
+\subsection{Challenge 3 (Single byte XOR decryption)}
+\label{sec:org10ffa53}
+\begin{itemize}
+\item Decrypt a single byte XOR encrypted message
+\item The standard frequencies are taken from \href{https://www.wikiwand.com/en/Letter\_frequency\#/Relative\_frequencies\_of\_letters\_in\_the\_English\_language}{here}
+\item Similarity measure is the negative of the distance measure taken from \href{https://www.wikiwand.com/en/Bhattacharyya\_distance}{here}
+\end{itemize}
+\begin{verbatim}
+import codecs
+import string
+from collections import Counter, defaultdict
+from math import log, sqrt
+
+n = 1
+
+
+def compute_ngram_freqs(n=1):
+    p = bytes(''.join(open("pride.txt").readlines()).lower(), 'utf-8')
+    bis = [p[i:i+n] for i in range(len(p)-n)]
+    top = Counter(bis).most_common(500)
+    freqs = defaultdict(lambda: 0)
+    for b, c in top:
+        freqs[b] = float(c) / len(bis)
+    return freqs
+
+
+freqs = compute_ngram_freqs(n)
+
+
+def english_similarity(m, n=1):
+    score = 0
+    m = m.lower()
+    test_counts = Counter([m[i:i+n] for i in range(len(m)-n)])
+    try:
+        if (any([codecs.decode(x) not in string.printable
+                 for x in test_counts.keys()])):
+            return float('-inf')
+    except UnicodeDecodeError:
+        return float('-inf')
+    total_ngrams = sum(test_counts.values())
+    for bi in test_counts.keys():
+        test_freq = float(test_counts[bi]) / total_ngrams
+        score += sqrt(test_freq * freqs[bi])
+    if score == 0:
+        return float('-inf')
+    else:
+        return log(score)
+
+
+def decrypt_single_byte_xor(s):
+    plain = b""
+    score = float('-inf')
+    key = None
+    for c in range(256):
+        candidate_key = [c] * len(s)
+        candidate = xor_strings(candidate_key, s)
+        candidate_score = english_similarity(candidate, 1)
+        if candidate_score > score:
+            score = candidate_score
+            plain = candidate
+            key = c
+    return plain, score, key
+
+
+def test_decrypt_single_byte_xor():
+    s = codecs.decode("1b37373331363f78151b7f2b783431333d78397828372d363c78373e783a393b3736", "hex")
+    plain = codecs.encode("Cooking MC's like a pound of bacon")
+    return decrypt_single_byte_xor(s)[0] == plain
+
+
+test_decrypt_single_byte_xor()
+\end{verbatim}
+
+\subsection{Challenge 4 (Single byte XOR detections)}
+\label{sec:org5d200e5}
+\begin{itemize}
+\item The file "4.txt" has 60 strings, of which one is single-byte XOR encrypted. We need to find it.
+\item Reusing the \texttt{english\_similarity} code from the previous challenge, pick the string with the highest candidate similarity.
+\end{itemize}
+\begin{verbatim}
+import codecs
+from operator import itemgetter
+
+
+def find_single_byte_xor(lines):
+    lines = map(decrypt_single_byte_xor, lines)
+    return max(lines, key=itemgetter(1))
+
+
+def test_find_single_byte_xor():
+    lines = open("4.txt").readlines()
+    lines = map(lambda x: codecs.decode(x.strip(), "hex"), lines)
+    return find_single_byte_xor(lines)
+
+print(test_find_single_byte_xor())
+\end{verbatim}
+
+\subsection{Challenge 5 (Repeating-key XOR)}
+\label{sec:org73734d1}
+\begin{itemize}
+\item Implement repeating-key XOR
+\end{itemize}
+\begin{verbatim}
+import codecs
+
+
+def repeating_key_xor(key, plain):
+    key = key * (len(plain) // len(key)) + key[:(len(plain) % len(key))]
+    return xor_strings(key, plain)
+
+
+def test_repeating_key_xor():
+    plain = codecs.encode('''Burning 'em, if you ain't quick and nimble
+I go crazy when I hear a cymbal''')
+    key = codecs.encode("ICE")
+    cipher = codecs.decode('''0b3637272a2b2e63622c2e69692a23693a2a3c6324202d623d63343c2a26226324272765272a282b2f20430a652e2c652a3124333a653e2b2027630c692b20283165286326302e27282f''', "hex")
+    return repeating_key_xor(key, plain) == cipher
+
+test_repeating_key_xor()
+\end{verbatim}
+
+\subsection{Challenge 6 (Repeating-key XOR decryption)}
+\label{sec:orgc866705}
+\begin{itemize}
+\item Break repeating-key XOR
+\item The file "6.txt" has a string that was encrypted with repeating-key XOR and then base64 encoded.
+\item Guess the key-length by computing hamming distances between candidate length sized blocks and testing the candidate lengths with the smallest average hamming distances between blocks.
+\begin{itemize}
+\item We average hamming distances between 4 blocks, normalize by dividing by the candidate keysize, and then use the five keysizes with the least normalized average hamming distances as candidate keysizes.
+\end{itemize}
+\item Given the keysize, breaking the ciphertext into blocks and taking the transpose gives you a bunch of single-byte xor problems to solve, the results of which should produce the original key.
+\begin{verbatim}
+import codecs
+from operator import itemgetter
+from base64 import b64decode
+
+
+def hamming(xs, ys):
+    return sum(bin(x ^ y).count("1") for x, y in zip(xs, ys))
+
+
+def test_hamming():
+    xs = codecs.encode("this is a test")
+    ys = codecs.encode("wokka wokka!!!")
+    return hamming(xs, ys) == 37
+
+
+test_hamming()
+
+
+def guess_keysize(ciphertext):
+    keysize_weights = []
+    for n in range(1, 64):
+        a, b, c, d = (ciphertext[:n], ciphertext[n:2*n],
+                      ciphertext[2*n:3*n], ciphertext[3*n:4*n])
+        h = (hamming(a, b) + hamming(b, c) + hamming(c, d) +
+             hamming(a, c) + hamming(a, d) + hamming(b, d)) / 6 / n
+        keysize_weights.append((n, h))
+    return list(map(itemgetter(0),
+                    sorted(keysize_weights,
+                           key=itemgetter(1))))[0:5]
+
+
+def transpose(matrix):
+    m, n = len(matrix), len(matrix[0])
+    return [[matrix[j][i] for j in range(m)] for i in range(n)]
+
+
+def decrypt_repeated_key_xor():
+    ciphertext = b64decode("".join(open("6.txt").readlines()))
+    guesses = guess_keysize(ciphertext)
+    candidates = []
+    for ks in guesses:
+        blocks = [ciphertext[i:i+ks] for i in range(0, len(ciphertext), ks)]
+        # pad to make transpose faster + easier to write (rectangular matrix)
+        blocks[-1] = blocks[-1] + b"\x00" * (ks - len(blocks[-1]))
+        trans = map(bytes, transpose(blocks))
+        trans_plains = list(map(decrypt_single_byte_xor, trans))
+        # make sure all columns get a valid decrypt
+        if (any(x[0] == b'' for x in trans_plains)):
+            continue
+
+        key = "".join(map(chr, (map(itemgetter(2), trans_plains))))
+        trans_plains = list(map(itemgetter(0), trans_plains))
+        plaintext = map(bytes, transpose(trans_plains))
+        plaintext = b"".join(plaintext)
+        candidates.append((plaintext, key))
+    return max(candidates, key=lambda x: english_similarity(x[0]))
+
+
+print(decrypt_repeated_key_xor()[1])
+\end{verbatim}
+\end{itemize}
+
+\subsubsection{Mistakes}
+\label{sec:org6725b33}
+\begin{itemize}
+\item Messed up splitting into blocks
+\item Messed up transposing multiple times
+\end{itemize}
+\subsection{Challenge 7 (AES ECB decryption)}
+\label{sec:org4966adf}
+\begin{itemize}
+\item Decrypt a file in AES ECB mode
+\end{itemize}
+\begin{verbatim}
+def aes_ecb_decrypt(key, ciphertext):
+    pass
+\end{verbatim}
+\subsection{Challenge 8 (Detect AES in ECB mode)}
+\label{sec:org8120f9d}
+\begin{itemize}
+\item Detect AES in ECB mode
+\item Look for duplicate 16 byte blocks
+\end{itemize}
+\begin{verbatim}
+def is_probably_aes_ecb(ciphertext):
+    blocks = [ciphertext[i:i+16] for i in range(0, len(ciphertext), 16)]
+    return len(blocks) != len(set(blocks))
+\end{verbatim}
+\section{Set 2}
+\label{sec:org56570f3}
+\end{document}
