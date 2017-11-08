@@ -21,8 +21,7 @@
    #+END_SRC
 
    #+RESULTS:
-   : 
-   : >>> >>> >>> ... ... ... >>> >>> ... ... ... ... >>> >>> True
+   : True
 
 ** XOR two strings together
    - Producing the XOR of two fixed-length strings
@@ -136,12 +135,13 @@
      def test_find_single_byte_xor():
          lines = open("4.txt").readlines()
          lines = map(lambda x: codecs.decode(x.strip(), "hex"), lines)
-         return find_single_byte_xor(lines)
+         return find_single_byte_xor(lines)[0].strip() == b"Now that the party is jumping"
 
-     print(test_find_single_byte_xor())
+     test_find_single_byte_xor()
    #+END_SRC
 
    #+RESULTS:
+   : True
 
 ** Repeating-key XOR
    - Implement repeating-key XOR
@@ -178,6 +178,8 @@
        from operator import itemgetter
        from base64 import b64decode
 
+       def blocks(text):
+           return [text[i:i+16] for i in range(0, len(text), 16)]
 
        def hamming(xs, ys):
            return sum(bin(x ^ y).count("1") for x, y in zip(xs, ys))
@@ -244,106 +246,310 @@
 ** AES ECB decryption
    - Decrypt a file in AES ECB mode
    #+BEGIN_SRC python :session :results value
+     from base64 import b64decode
+     from Crypto.Cipher import AES
+
      def aes_ecb_decrypt(key, ciphertext):
-         pass
+         cipher = AES.new(key, AES.MODE_ECB)
+         return cipher.decrypt(ciphertext)
+
+     def test_aes_ecb_decrypt():
+         ct = open("7.txt", "r").readlines()
+         ct = "".join(x.strip() for x in ct)
+         ct = b64decode(ct)
+         pt = aes_ecb_decrypt(b"YELLOW SUBMARINE", ct)
+         return pt.split(b'\n')[0] == b"I'm back and I'm ringin' the bell "
+
+     test_aes_ecb_decrypt()
    #+END_SRC
+
+   #+RESULTS:
+   : True
+
 ** AES in ECB mode
    - Detect AES in ECB mode
    - Look for duplicate 16 byte blocks
    #+BEGIN_SRC python :session :results value
+     from base64 import b64decode
+
      def is_probably_aes_ecb(ciphertext):
          blocks = [ciphertext[i:i+16] for i in range(0, len(ciphertext), 16)]
          return len(blocks) != len(set(blocks))
+
+     def test_is_aes_ecb():
+         cts = open("8.txt", "r").readlines()
+         cts = [b64decode(x) for x in cts]
+         cts = [is_probably_aes_ecb(x) for x in cts]
+         return sum(cts) == 1
+
+     test_is_aes_ecb()
    #+END_SRC
+
+   #+RESULTS:
+   : True
+
 * Set 2
 ** Implement PKCS#7 padding
-   #+BEGIN_SRC python :session :results value
-   
-   #+END_SRC
+   - If n bytes of padding are required, pad with n copies of the byte n 
+     #+BEGIN_SRC python :session :results value
+       def pkcs7pad(plaintext, n):
+           pad = n - len(plaintext)%n
+           return plaintext + pad * bytes([pad])
+
+       def test_pkcs7pad():
+       pt = b"YELLOW SUBMARINE"
+           assert pkcs7pad(pt, 20) == b"YELLOW SUBMARINE\x04\x04\x04\x04"
+           pt = b"YELLOW"
+           assert pkcs7pad(pt, len(pt)) == pt
+           return True
+
+       test_pkcs7pad()
+     #+END_SRC
+     #+RESULTS:
+** Implement CBC mode
+    #+BEGIN_SRC python :session :results value
+      from base64 import b64decode
+      from Crypto.Cipher import AES
+
+      def aes_ecb_encrypt(key, plaintext):
+          cipher = AES.new(key, AES.MODE_ECB)
+          return cipher.encrypt(plaintext)
+
+      def aes_cbc_encrypt(key, plaintext, iv):
+          blocks = [plaintext[i:i+16] for i in range(0, len(plaintext), 16)]
+          blocks = [iv] + blocks
+          for i in range(1, len(blocks)):
+              blocks[i] = xor_strings(blocks[i-1], blocks[i])
+              blocks[i] = aes_ecb_encrypt(key, blocks[i])
+          return b"".join(blocks[1:])
+
+      def aes_cbc_decrypt(key, ciphertext, iv):
+          blocks = [ciphertext[i:i+16] for i in range(0, len(ciphertext), 16)]
+          blocks = [iv] + blocks
+          for i in range(len(blocks)-1, 0, -1):
+              blocks[i] = aes_ecb_decrypt(key, blocks[i])
+              blocks[i] = xor_strings(blocks[i-1], blocks[i])
+          return b"".join(blocks[1:])
+
+      def test_aes_cbc_decrypt():
+          ct = open("10.txt", "r").readlines()
+          ct = "".join(x.strip() for x in ct)
+          ct = b64decode(ct)
+          pt = aes_cbc_decrypt(b"YELLOW SUBMARINE", ct, b"\x00"*16)
+          return pt.split(b'\n')[0] == b"I'm back and I'm ringin' the bell "
+
+      test_aes_cbc_decrypt()
+    #+END_SRC
+    #+RESULTS:
+    : True
+** An ECB/CBC detection oracle
+    #+BEGIN_SRC python :session :results value
+      from Crypto.Random import random
+      from Crypto.Cipher import AES
+
+      def random_aes_key():
+          return Random.new().read(AES.block_size)
+
+      def cbc_or_ecb_oracle(plaintext):
+          key = random_aes_key()
+          plaintext = pkcs7pad(plaintext, AES.block_size)
+          if(random.choice([True, False])):
+              return aes_cbc_encrypt(key, plaintext, b"\x00"*16)
+          else:
+              return aes_ecb_encrypt(key, plaintext)
+
+      def detect_cbc_or_ecb(oracle):
+          test = b"A"*AES.block_size*2
+          ct = oracle(test)
+          if(ct[:AES.block_size] == ct[AES.block_size:2*AES.block_size]):
+              return AES.MODE_ECB
+          else:
+              return AES.MODE_CBC
+    #+END_SRC
+    #+RESULTS:
 ** Byte-at-a-time ECB decryption
    #+BEGIN_SRC python :session :results value
-   
+     from base64 import b64decode
+
+     key = random_aes_key()
+     def ecb_oracle(plaintext):
+         secret = b'''Um9sbGluJyBpbiBteSA1LjAKV2l0aCBteSByYWctdG9wIGRvd24gc28gbXkg
+     aGFpciBjYW4gYmxvdwpUaGUgZ2lybGllcyBvbiBzdGFuZGJ5IHdhdmluZyBq
+     dXN0IHRvIHNheSBoaQpEaWQgeW91IHN0b3A/IE5vLCBJIGp1c3QgZHJvdmUg
+     YnkK'''
+         secret = b64decode(secret)
+         plaintext = pkcs7pad(plaintext + secret, AES.block_size)
+         return aes_ecb_encrypt(key, plaintext)
+
+     def find_blocksize(oracle):
+         size = len(oracle(b"A"))
+         for i in range(64):
+             n = len(oracle(b"A"*i))
+             if(n != size):
+                 return n - size
+
+     def decrypt_ecb_byte_by_byte():
+         bs = find_blocksize(ecb_oracle)
+         n = len(ecb_oracle(b""))
+         guess = n * b"A"
+         secret = b""
+         # The index of the block to compare (last block of your guess)
+         gi = (n-1) // bs
+         for i in range(n):
+             guess = (n-1-len(secret))*b"A"
+             ct = blocks(ecb_oracle(guess))[gi]
+             for k in range(255):
+                 guessed_ct = blocks(ecb_oracle(guess + secret + bytes([k])))[gi]
+                 if(guessed_ct == ct):
+                     secret += bytes([k])
+                     break
+         return secret
+
+     decrypt_ecb_byte_by_byte()
    #+END_SRC
+
+   #+RESULTS:
+
 ** ECB cut and paste
    #+BEGIN_SRC python :session :results value
    
    #+END_SRC
+
+   #+RESULTS:
+
 ** Byte-at-a-time ECB decryption (harder)
    #+BEGIN_SRC python :session :results value
    
    #+END_SRC
+
+   #+RESULTS:
+
 ** PKCS#7 validation
    #+BEGIN_SRC python :session :results value
    
    #+END_SRC
+
+   #+RESULTS:
+
 ** CBC bitflipping
    #+BEGIN_SRC python :session :results value
    
    #+END_SRC
+
+   #+RESULTS:
+
 * Set 3
 ** The CBC padding oracle
    #+BEGIN_SRC python :session :results value
    
    #+END_SRC
+
+   #+RESULTS:
+
 ** Implement CTR mode
    #+BEGIN_SRC python :session :results value
    
    #+END_SRC
+
+   #+RESULTS:
+
 ** Break fixed-nonce CTR mode (substitutions)
    #+BEGIN_SRC python :session :results value
    
    #+END_SRC
+
+   #+RESULTS:
+
 ** Break fixed-nonce CTR mode (statistically)
    #+BEGIN_SRC python :session :results value
    
    #+END_SRC
+
+   #+RESULTS:
+
 ** Implement MT19937
    #+BEGIN_SRC python :session :results value
    
    #+END_SRC
+
+   #+RESULTS:
+
 ** Crack MT19937 seed
    #+BEGIN_SRC python :session :results value
    
    #+END_SRC
+
+   #+RESULTS:
+
 ** Clone MT19937 RNG from output
    #+BEGIN_SRC python :session :results value
    
    #+END_SRC
+
+   #+RESULTS:
+
 ** Create the MT19937 stream cipher and break it
    #+BEGIN_SRC python :session :results value
    
    #+END_SRC
+
+   #+RESULTS:
+
 * Set 4
 ** Break random access read/write AES CTR
    #+BEGIN_SRC python :session :results value
    
    #+END_SRC
+
+   #+RESULTS:
+
 ** CTR bitflipping
    #+BEGIN_SRC python :session :results value
    
    #+END_SRC
+
+   #+RESULTS:
+
 ** Recover CBC key with IV=Key
    #+BEGIN_SRC python :session :results value
    
    #+END_SRC
+
+   #+RESULTS:
+
 ** Implement a SHA-1 keyed MAC
    #+BEGIN_SRC python :session :results value
    
    #+END_SRC
+
+   #+RESULTS:
+
 ** Break a SHA-1 keyed MAC (length extension)
    #+BEGIN_SRC python :session :results value
    
    #+END_SRC
+
+   #+RESULTS:
+
 ** Break an MD4 keyed MAC (length extension)
    #+BEGIN_SRC python :session :results value
    
    #+END_SRC
+
+   #+RESULTS:
+
 ** Implement and break HMAC-SHA1 with an artificial timing leak
    #+BEGIN_SRC python :session :results value
    
    #+END_SRC
+
+   #+RESULTS:
+
 ** Break HMAC-SHA1 with less artificial timing leak 
    #+BEGIN_SRC python :session :results value
    
    #+END_SRC
+
+   #+RESULTS:
+
 * Set 5
